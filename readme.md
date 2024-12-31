@@ -13,7 +13,7 @@ journalctl -u my-python-script.service -b
 After modifying the service file, reload systemd and restart the service:
 ```commandline
 # stop the service
-sudo systemctl restart my-python-script.service
+sudo systemctl stop my-python-script.service
 
 # rename the file in the service config
 # Find a line that looks like:
