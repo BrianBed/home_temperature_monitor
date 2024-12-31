@@ -1,4 +1,4 @@
-*.txt
+basement.txt
 .idea
 .gitignore
 .env
