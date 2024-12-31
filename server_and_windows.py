@@ -45,7 +45,8 @@ ave_temp = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ave_pointer = 0
 askheat = 0
 row = 0
-
+visible = True
+number_pad = None
 
 # Function to handle each ESP32 connection
 def handle_client(client_socket, client_address):
@@ -64,11 +65,11 @@ def handle_client(client_socket, client_address):
                 row2 = int(data[0])
                 set_p = setpoint_boxes[row2].getText()
                 client_socket.sendall(f"{set_p} : {onoff[row2]} : {temp[row2]}".encode())
+                print(f"\n\n ****** {row2}")
 
             message_queue.put(f" {data}")
             # Optionally, send a response back to the ESP32
-            # client_
-
+            # client_socket.sendall("Data received\n".encode())
 
         except ConnectionResetError:
             print(f"Connection with {client_address} closed")
@@ -93,10 +94,101 @@ def start_server(host="0.0.0.0", port=8080):
     print("Shutting down the server...")
     server.close()
 
+def toggle_visibility(objects, visible):
+    """Toggles visibility of a group of objects (both button and label)."""
+    for obj in objects:
+        if visible:
+            obj['button'].draw(win)
+            obj['label'].draw(win)
+        else:
+            obj['button'].undraw()
+            obj['label'].undraw()
+
+
+def create_number_pad():
+    """Creates a number pad with buttons for digits 0-9, decimal, and clear."""
+    # Create a list to store the number buttons
+    buttons = []
+
+    # Coordinates for the buttons on the window
+    x_start = 1100
+    y_start = 700
+    button_width = 25
+    button_height = 25
+    spacing = 10
+
+    # Create buttons for numbers 1-9
+    for i in range(1, 10):
+        row = (i - 1) // 3
+        col = (i - 1) % 3
+        x = x_start + col * (button_width + spacing)
+        y = y_start + row * (button_height + spacing)
+        button = Rectangle(Point(x, y), Point(x + button_width, y + button_height))
+        button.setFill("lightblue")
+        button.setOutline("black")
+        label = Text(Point(x + button_width / 2, y + button_height / 2), str(i))
+        label.setSize(16)
+        buttons.append({'button': button, 'label': label, 'value': str(i)})
+
+    # Create a button for 0
+    button_0 = Rectangle(Point(x_start, y_start + 3 * (button_height + spacing)),
+                         Point(x_start + button_width, y_start + 3 * (button_height + spacing) + button_height))
+    button_0.setFill("lightblue")
+    button_0.setOutline("black")
+    label_0 = Text(Point(x_start + button_width / 2, y_start + 3 * (button_height + spacing) + button_height / 2), "0")
+    label_0.setSize(16)
+    buttons.append({'button': button_0, 'label': label_0, 'value': "0"})
+
+    # Create button for decimal point
+    button_dot = Rectangle(Point(x_start + button_width + spacing, y_start + 3 * (button_height + spacing)),
+                           Point(x_start + 1 * (button_width + spacing) + button_width,
+                                 y_start + 3 * (button_height + spacing) + button_height))
+    button_dot.setFill("lightblue")
+    button_dot.setOutline("black")
+    label_dot = Text(Point(x_start + button_width + spacing + button_width / 2,
+                           y_start + 3 * (button_height + spacing) + button_height / 2), ".")
+    label_dot.setSize(16)
+    buttons.append({'button': button_dot, 'label': label_dot, 'value': "."})
+
+    # Create button for Clear
+    button_clear = Rectangle(Point(x_start + 2 * (button_width + spacing), y_start + 3 * (button_height + spacing)),
+                             Point(x_start + 2 * (button_width + spacing) + button_width,
+                                   y_start + 3 * (button_height + spacing) + button_height))
+    button_clear.setFill("lightcoral")
+    button_clear.setOutline("black")
+    label_clear = Text(Point(x_start + 2 * (button_width + spacing) + button_width / 2,
+                             y_start + 3 * (button_height + spacing) + button_height / 2), "C")
+    label_clear.setSize(16)
+    buttons.append({'button': button_clear, 'label': label_clear, 'value': "C"})
+
+    return buttons
+
+
+def click_on_button(x, y, buttons):
+    """Check if a click (x, y) is within any button's area."""
+    for button in buttons:
+        rect = button['button']
+        top_left = rect.getP1()
+        bottom_right = rect.getP2()
+        if top_left.getX() <= x <= bottom_right.getX() and top_left.getY() <= y <= bottom_right.getY():
+            print(button['value'])
+            return button['value']
+    return None
+
+
+def update_textbox(textbox, current_text, value):
+    """Update the textbox text with the clicked value."""
+    if value == "C":  # Clear the textbox
+        textbox.setText("")
+    elif value == "." and "." not in current_text:
+        textbox.setText(current_text + value)
+    elif value != ".":
+        textbox.setText(current_text + value)
+
 
 def draw_line(row1, length):
     aline[row1].undraw()
-    aline[row1] = Line(Point(330, 25 + row1 * 75), Point(330 + length/19, 25 + row1 * 75))
+    aline[row1] = Line(Point(330, 25 + row * 75), Point(330 + length/19, 25 + row * 75))
     aline[row1].setFill("red")
     aline[row1].setWidth(5)
     aline[row1].draw(win)
@@ -157,15 +249,6 @@ def read_last_line(file_name):
             file.seek(-2, 1)  # Move 2 bytes back
         last_line = file.readline().decode('utf-8').strip()  # Read and decode the last line
     return last_line
-
-
-
-
-
-# Create CSV file with header if it doesn't exist
-# with open("temperature_stats.csv", "a", newline='') as f:
-# writer = csv.writer(f)
-# writer.writerow(["Timestamp", "High Today", " Time  ", "Low Today", "  Time ", "high yesterday", "  Time", "lo yesterday", "  Time", "high Year", " date ", "Low Year", " date "])
 
 
 def display_data(num, location, d1, d2, d3, d4):
@@ -310,10 +393,9 @@ def update_display():
             # Split the string to isolate the relevant parts
             parts = message.split(",")
 
-            # print(parts)
+            print(parts)
 
             if len(parts) != 5:
-                print("Error: Message does not have the expected format.")
                 no_good.setText("Error: Message does not have the expected format.")  # Set the message in the wrong_box
                 continue
 
@@ -322,7 +404,7 @@ def update_display():
                 temp_part = parts[1].split("Temp: ")[1]  # Get the part after "Temp: "
                 temperature = temp_part[:-1]  # Remove the 'C'
             else:
-                print("Error: Temperature information missing.")
+                no_good.setText("Error: Temperature information missing.")
                 continue
 
             # Extract humidity
@@ -330,44 +412,45 @@ def update_display():
                 humidity_part = parts[2].split("Humidity: ")[1]  # Get the part after "Humidity: "
                 humidity = humidity_part[:-1]  # Remove the '%'
             else:
-                print("Error: Humidity information missing.")
+                no_good.setText("Error: Humidity information missing.")
                 continue
 
             # Extract heat index
             if "heat" in parts[3]:
                 heat_part = parts[3].split("heat index: ")[1]  # Get the part after "Time: "
             else:
-                print("Error: heat index"
-                      " information missing.")
+                no_good.setText("Error: heat index  -   information missing")
                 continue
 
             # Extract time
             if "Time:" in parts[4]:
                 time_part = parts[4].split("Time: ")[1]  # Get the part after "Time: "
             else:
-                print("Error: Time information missing.")
+                no_good.setText("Error: Time information missing.")
                 continue
 
+            timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+
             if message.find("kitchen") != -1:
-                display_data(2, "kitchen", temperature, humidity, heat_part, time_part)
+                display_data(2, "kitchen", temperature, humidity, heat_part, timestamp)
 
             if message.find("bedroom") != -1:
-                display_data(4, "bedroom", temperature, humidity, heat_part, time_part)
+                display_data(4, "bedroom", temperature, humidity, heat_part, timestamp)
 
             if message.find("dining") != -1:
-                display_data(3, "dining room", temperature, humidity, heat_part, time_part)
+                display_data(3, "dining room", temperature, humidity, heat_part, timestamp)
 
             if message.find("office") != -1:
-                display_data(0, "office", temperature, humidity, heat_part, time_part)
+                display_data(0, "office", temperature, humidity, heat_part, timestamp)
 
             if message.find("living") != -1:
-                display_data(1, "living room", temperature, humidity, heat_part, time_part)
+                display_data(1, "living room", temperature, humidity, heat_part, timestamp)
 
             if message.find("basement") != -1:
-                display_data(5, "basement", temperature, humidity, heat_part, time_part)
+                display_data(5, "basement", temperature, humidity, heat_part, timestamp)
 
             if message.find("outside") != -1:
-                display_data(6, "outside", temperature, humidity, heat_part, time_part)
+                display_data(6, "outside", temperature, humidity, heat_part, timestamp)
                 update_stats(float(temperature))
                 display_stats()
                 new_temp = float(temperature)
@@ -382,7 +465,7 @@ def update_display():
                 print(calc_average())
 
         except IndexError:
-            print("Error: Unable to process message.")
+            no_good.setText("Error: Unable to process message.")
 
             # Function to initialize the graphics window and text boxes
 
@@ -396,12 +479,13 @@ def calc_angle():
         change = 0.9
     if change < -0.9:
         change = -0.9
-    if change == 0:
-         color = "white"
+
     if change > 0:
         color = "green"
-    if change < 0:
+    elif change < 0:
         color = "red"
+    else:
+        color = "white"
     print("change: " + str(change) + "  new temp: " + str(temp_change) + "  last temp: " + str(last_temp))
     angle = change * 100  # Positive goes counterclockwise, negative clockwise (corrected)
     t_display.setText(round(change,2))
@@ -428,7 +512,7 @@ def update_arrow(arrow, center, angle, color):
 
 def setup_window():
     global win, text_boxes, my_rec, no_good, setpoint_boxes, input_box, close_box, rooms, stats_hiday, stats_loday, stats_hiyes, stats_loyes, stats_hiyear, stats_loyear,arrow, t_display, last_temp
-    global aline
+    global aline, number_pad, textbox_label, current_text
 
     win = GraphWin("Home Temperature Monitor", 1530, 1000)  # Create the window
     win.setBackground("cyan")
@@ -444,13 +528,7 @@ def setup_window():
         my_line.draw(win)
         aline.append(my_line)
 
-    # Create an input box for user input
-    input_box = Entry(Point(725, 725), 6)  # Create an entry box
-    input_box.setSize(14)
-    input_box.draw(win)
-    input_box.setText("22.0")
-
-    set_box = Text(Point(650, 725), "SET")
+    set_box = Text(Point(750, 725), "SET")
     set_box.setSize(14)
     set_box.setTextColor("black")
     set_box.draw(win)
@@ -471,9 +549,9 @@ def setup_window():
     # for i in range(6):
     # write_data(i)
 
-    close_box = Text(Point(200, 725), "CLOSE NOW")  # Place them horizontally
+    close_box = Text(Point(200, 725), "CLOSE")  # Place them horizontally
     close_box.setSize(16)
-    close_box.setTextColor("orange")
+    close_box.setTextColor("black")
     close_box.draw(win)
     # setpoint_boxes.append(message_box)
 
@@ -483,11 +561,6 @@ def setup_window():
     message_box.draw(win)
     setpoint_boxes.append(message_box)
 
-    message_box = Text(Point(1300, 725), "Clear all")  # Place them horizontally
-    message_box.setSize(16)
-    message_box.setTextColor("orange")
-    message_box.draw(win)
-    setpoint_boxes.append(message_box)
 
     i = 1
     for x in range(5):
@@ -589,6 +662,28 @@ def setup_window():
     change_rectangle.setOutline("green")
     change_rectangle.draw(win)
 
+    # Create the number pad (list of buttons)
+
+    number_pad = create_number_pad()
+
+    # Draw the number pad
+    for button in number_pad:
+        button['button'].draw(win)
+        button['label'].draw(win)
+
+    # Create the textbox to display the input
+    textbox_rect = Rectangle(Point(800, 712), Point(860, 737))
+    textbox_rect.setFill("white")
+    textbox_rect.setOutline("black")
+    textbox_rect.draw(win)
+
+    textbox_label = Text(Point(830, 727), "22.5")
+    textbox_label.setSize(16)
+    textbox_label.draw(win)
+
+    # Start with an empty string
+    current_text = ""
+
     # Draw the circle
     circle = Circle(center, 40)
     circle.setOutline('green')
@@ -615,6 +710,9 @@ def setup_window():
     t_display.setSize(16)
     t_display.setTextColor("white")
     t_display.draw(win)
+
+    visible = False
+    toggle_visibility(number_pad,visible)
 
     initialize()
 
@@ -644,53 +742,60 @@ def run_gui_and_server():
     while True:
         global input_box, close_box
         global setpoint_boxes
+        global number_pad
+        global textbox_label, current_text
+        global visible
 
         schedule.run_pending()
         time.sleep(1)
 
         update_display()
         click_point = win.checkMouse()  # Wait for mouse click (blocking)
+
         keystop = win.checkKey()
         if keystop == "x":
             close_win()
             break
         # Ignore clicks on the input box
 
-        # if input_box.getAnchor().getX() - 100 < click_point.getX() < input_box.getAnchor().getX() + 100 and \
-        # input_box.getAnchor().getY() - 10 < click_point.getY() < input_box.getAnchor().getY() + 10:
-        # $continue
-
-        input_x = 200
-        input_y = 725
         if click_point is not None:
-            if input_x - 150 < click_point.getX() < input_x + 150 and \
-                    input_y - 15 < click_point.getY() < input_y + 15:
-                close_win()
-                break
+            clicked_value = click_on_button(click_point.getX(), click_point.getY(), number_pad)
 
-        input_x = 1000
-        input_y = 725
-        if click_point is not None:
-            if input_x - 150 < click_point.getX() < input_x + 150 and \
-                    input_y - 15 < click_point.getY() < input_y + 15:
+            if clicked_value is not None:
+                update_textbox(textbox_label, current_text, clicked_value)
+                current_text = textbox_label.getText()
+
+            if 800 < click_point.getX() < 860 and \
+                    712 < click_point.getY() < 737:
+                visible = not visible
+                toggle_visibility(number_pad, visible)
+
+            # click to close window
+            input_x = 200
+            input_y = 725
+            if input_x - 75 < click_point.getX() < input_x + 75 and \
+                            input_y - 12 < click_point.getY() < input_y + 12:
+                 close_win()
+                 break
+
+                 # click to clear error box
+            input_x = 1000
+            input_y = 725
+            if input_x - 50 < click_point.getX() < input_x + 50 and \
+                        input_y - 12 < click_point.getY() < input_y + 12:
                 no_good.setText("no error Now")
 
-        input_x = 1300
-        input_y = 725
-        if click_point is not None:
-            if input_x - 150 < click_point.getX() < input_x + 150 and \
-                    input_y - 15 < click_point.getY() < input_y + 15:
-                continue
-
+# click to change setpoint
         for i in range(6):
             input_x = 150 + i * 240
             input_y = 660
             if click_point is not None:
-                if input_x - 150 < click_point.getX() < input_x + 150 and \
-                        input_y - 20 < click_point.getY() < input_y + 20:
-                    setpoint_boxes[i].setText(input_box.getText())
+                if input_x - 50 < click_point.getX() < input_x + 50 and \
+                        input_y - 12 < click_point.getY() < input_y + 12:
+                    setpoint_boxes[i].setText(textbox_label.getText())
                     write_data(i)
 
+# click to toggle heat on off
         for i in range(6):
             input_x = 165
             input_y = 50 + i * 75
@@ -698,6 +803,9 @@ def run_gui_and_server():
                 if input_x - 150 < click_point.getX() < input_x + 150 and \
                         input_y - 20 < click_point.getY() < input_y + 20:
                     toggle_onoff(i)
+
+
+
 
     server_thread.join()
 
