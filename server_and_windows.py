@@ -9,6 +9,8 @@ import time
 import datetime
 import csv
 import math
+import random
+#import urllib.request
 
 # Create a threading event to signal the server to stop
 stop_event = threading.Event()
@@ -47,6 +49,10 @@ askheat = 0
 row = 0
 visible = True
 number_pad = None
+wind_center = Point(1700, 200)
+wind_radius = 100
+wind_arrow = None
+current_angle = 0
 
 # Function to handle each ESP32 connection
 def handle_client(client_socket, client_address):
@@ -492,7 +498,6 @@ def calc_angle():
     last_temp = temp_change
     arrow = update_arrow(arrow, center, angle, color)
 
-# Function to update the arrow direction
 def update_arrow(arrow, center, angle, color):
     length = 38  # length of the arrow
     radians = math.radians(angle)
@@ -508,13 +513,90 @@ def update_arrow(arrow, center, angle, color):
     new_arrow.draw(win)
     return new_arrow
 
+def setup_wind_display(win):
+    global wind_arrow
+
+    # Circle
+    circle = Circle(wind_center, wind_radius)
+    circle.setOutline('red')
+    circle.setFill('black')
+    circle.setWidth(5)
+    circle.draw(win)
+
+    # Direction labels
+    Text(Point(wind_center.getX(), wind_center.getY() - wind_radius - 20), "N").draw(win)
+    Text(Point(wind_center.getX(), wind_center.getY() + wind_radius + 20), "S").draw(win)
+    Text(Point(wind_center.getX() - wind_radius - 20, wind_center.getY()), "W").draw(win)
+    Text(Point(wind_center.getX() + wind_radius + 20, wind_center.getY()), "E").draw(win)
+    Text(Point(wind_center.getX(), wind_center.getY() - wind_radius - 40), " Wind direction").draw(win)
+    Text(Point(wind_center.getX() - 50, wind_center.getY() + 150), "Wind speed").draw(win)
+    Text(Point(wind_center.getX() + 50, wind_center.getY() + 220), "Absolute").draw(win)
+    Text(Point(wind_center.getX() + 50, wind_center.getY() + 240), "Humidity").draw(win)
+    Text(Point(wind_center.getX() + 50, wind_center.getY() + 380), "Dew point").draw(win)
+    Text(Point(wind_center.getX() + 50, wind_center.getY() + 520), "Atmospheric").draw(win)
+    Text(Point(wind_center.getX() + 50, wind_center.getY() + 540), "Pressure").draw(win)
+
+    # Dummy arrow
+    wind_arrow = Line(wind_center, wind_center )
+    wind_arrow.setArrow("last")
+    wind_arrow.setWidth(4)
+    wind_arrow.setFill("white")
+    wind_arrow.draw(win)
+
+def update_wind_direction(new_angle, win, alpha=0.2):
+    global wind_arrow, current_angle
+
+    # Smooth the angle
+    diff = (new_angle - current_angle + 180) % 360 - 180
+    current_angle += alpha * diff
+    #current_angle = new_angle
+
+    # Calculate new arrow tip`
+    radians = math.radians(current_angle)
+    x = wind_center.getX() + wind_radius * math.cos(radians)
+    y = wind_center.getY() - wind_radius * math.sin(radians)
+    tip = Point(x, y)
+
+    # Replace arrow
+    wind_arrow.undraw()
+    wind_arrow = Line(wind_center, tip)
+    wind_arrow.setArrow("last")
+    wind_arrow.setWidth(4)
+    wind_arrow.setFill("white")
+    wind_arrow.draw(win)
+
+import urllib.request
+
+def get_angle_from_esp32():
+
+    try:
+        response = urllib.request.urlopen("http://weatheresp/angle", timeout=2)
+        angle_str = response.read().decode().strip()
+        parts = angle_str.strip().split(":")
+
+        # Convert each to float
+        angle1 = float(parts[0])
+        text_boxes[13].setText("Temperature: " + parts[1] + "°C") #  temperature outside
+        text_boxes[20].setText("Humidity: " + parts[2] + "%")   # outside humidity
+        text_boxes[27].setText("Heat index: " + parts[3] + "°C")  # outside heat index
+        pres.setText(parts[4] + " hPa")
+        abshum.setText(parts[5] + " grams/m³")
+        dew_point.setText(parts[6] + " °C")
+        wind_speed.setText(parts[7] + " kmh")
+        text_boxes[6].setText("outside")
+        text_boxes[34].setText("Time: " + datetime.datetime.now().strftime('%H:%M:%S'))
+        print(angle1)
+        return angle1
+    except Exception as e:
+        print("Error getting angle:", e)
+        return None
 
 
 def setup_window():
     global win, text_boxes, my_rec, no_good, setpoint_boxes, input_box, close_box, rooms, stats_hiday, stats_loday, stats_hiyes, stats_loyes, stats_hiyear, stats_loyear,arrow, t_display, last_temp
-    global aline, number_pad, textbox_label, current_text
+    global aline, number_pad, textbox_label, current_text, pres, dew_point, abshum, wind_speed
 
-    win = GraphWin("Home Temperature Monitor", 1530, 1000)  # Create the window
+    win = GraphWin("Home Temperature Monitor", 1900, 1000)  # Create the window
     win.setBackground("cyan")
     win.master.geometry("+50+50")
 
@@ -684,7 +766,7 @@ def setup_window():
     # Start with an empty string
     current_text = ""
 
-    # Draw the circle
+    # Draw the circle for temperature change
     circle = Circle(center, 40)
     circle.setOutline('green')
     circle.setFill("black")
@@ -697,6 +779,31 @@ def setup_window():
     arrow.setWidth(5)
     arrow.setFill("white")
     arrow.draw(win)
+
+    # draw wind circle
+    setup_wind_display(win)
+
+    #add teardrop graphic
+    # display teardrop  absolute humidity
+    img = Image(Point(1650, 450), "nomoretears.gif")  # Replace with your image file name
+    img.draw(win)
+    abshum = Text(Point(1750,460), "6.5"+ "%")
+    abshum.draw(win)
+
+
+    #display  dewpoint graphic
+    dew = Image(Point(1650, 600), "dew_point.gif")  # Replace with your image file name
+    dew.draw(win)
+    dew_point = Text(Point(1750, 600), "6.5" + "C")
+    dew_point.draw(win)
+
+    bar = Image(Point(1650, 740), "barometer.gif")  # Replace with your image file name
+    bar.draw(win)
+    pres = Text(Point(1750, 760), "1013" + " Hpa")
+    pres.draw(win)
+
+    wind_speed = Text(Point(1750, 350), "" + " kmh")
+    wind_speed.draw(win)
 
     t_change = Text(Point(150,819),"""Temperature
     change""")
@@ -733,6 +840,8 @@ def run_gui_and_server():
     server_thread.daemon = True  # This ensures the server thread will exit when the program does
     server_thread.start()
 
+
+
     schedule.every(5).minutes.do(calc_angle)
     schedule.every().hour.at(":00").do(append_to_file)
     schedule.every().day.at("00:00").do(reset_daily_stats)
@@ -744,10 +853,15 @@ def run_gui_and_server():
         global setpoint_boxes
         global number_pad
         global textbox_label, current_text
-        global visible
+        global visible, pres
 
         schedule.run_pending()
         time.sleep(1)
+
+        # get wind direction from esp32
+        angle = get_angle_from_esp32()
+        if angle is not None:
+            update_wind_direction(angle, win)
 
         update_display()
         click_point = win.checkMouse()  # Wait for mouse click (blocking)
